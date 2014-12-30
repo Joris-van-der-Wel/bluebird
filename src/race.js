@@ -1,17 +1,16 @@
 "use strict";
-module.exports = function(Promise, INTERNAL, cast) {
+module.exports = function(Promise, INTERNAL, tryConvertToPromise) {
 var apiRejection = require("./errors_api_rejection.js")(Promise);
 var isArray = require("./util.js").isArray;
 
 var raceLater = function (promise) {
     return promise.then(function(array) {
-        return Promise$_Race(array, promise);
+        return race(array, promise);
     });
 };
 
-var hasOwn = {}.hasOwnProperty;
-function Promise$_Race(promises, parent) {
-    var maybePromise = cast(promises, undefined);
+function race(promises, parent) {
+    var maybePromise = tryConvertToPromise(promises, undefined);
 
     if (maybePromise instanceof Promise) {
         return raceLater(maybePromise);
@@ -30,7 +29,7 @@ function Promise$_Race(promises, parent) {
     for (var i = 0, len = promises.length; i < len; ++i) {
         var val = promises[i];
 
-        if (val === undefined && !(hasOwn.call(promises, i))) {
+        if (val === undefined && !(i in promises)) {
             continue;
         }
 
@@ -41,11 +40,11 @@ function Promise$_Race(promises, parent) {
 }
 
 Promise.race = function (promises) {
-    return Promise$_Race(promises, undefined);
+    return race(promises, undefined);
 };
 
 Promise.prototype.race = function () {
-    return Promise$_Race(this, undefined);
+    return race(this, undefined);
 };
 
 };

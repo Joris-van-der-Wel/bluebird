@@ -98,33 +98,44 @@ describe("timeout", function () {
         doExpensiveOp().timeout(100);
     });
 
-    it("should clear timeouts when success", function(done) {
-        var old = globalObject.clearTimeout;
-        var handleSet = false;
-        globalObject.clearTimeout = function(handle) {
-            handleSet = true;
-            globalObject.clearTimeout = old;
-        };
+    var globalsAreReflectedInGlobalObject = (function(window) {
+        var fn = function(id){return clearTimeout(id);};
+        var old = window.clearTimeout;
+        window.clearTimeout = fn;
+        var ret = clearTimeout === fn;
+        window.clearTimeout = old;
+        return ret;
+    })(globalObject);
 
-        Q.delay(10).timeout(100).then(function() {
-            assert(handleSet);
-            done();
+    if (globalsAreReflectedInGlobalObject) {
+        it("should clear timeouts when success", function(done) {
+            var old = globalObject.clearTimeout;
+            var handleSet = false;
+            globalObject.clearTimeout = function(handle) {
+                handleSet = true;
+                globalObject.clearTimeout = old;
+            };
+
+            Q.delay(10).timeout(100).then(function() {
+                assert(handleSet);
+                done();
+            });
         });
-    });
 
-    it("should clear timeouts when fail", function(done) {
-        var old = globalObject.clearTimeout;
-        var handleSet = false;
-        globalObject.clearTimeout = function(handle) {
-            handleSet = true;
-            globalObject.clearTimeout = old;
-        };
+        it("should clear timeouts when fail", function(done) {
+            var old = globalObject.clearTimeout;
+            var handleSet = false;
+            globalObject.clearTimeout = function(handle) {
+                handleSet = true;
+                globalObject.clearTimeout = old;
+            };
 
-        Q.delay(100).timeout(10).then(null, function() {
-            assert(handleSet);
-            done();
+            Q.delay(100).timeout(10).then(null, function() {
+                assert(handleSet);
+                done();
+            });
         });
-    });
+    }
 });
 
 describe("delay", function () {
@@ -203,5 +214,22 @@ describe("delay", function () {
         Q.delay(15).then(function () { deferred.progress(2); });
         Q.delay(25).then(function () { deferred.progress(3); });
         Q.delay(35).then(function () { deferred.resolve(); });
+    });
+
+    it("should resolve follower promise's value", function(done) {
+        var resolveF;
+        var f = new Promise(function() {
+            resolveF = arguments[0];
+        });
+        var v = new Promise(function(f) {
+            setTimeout(function() {
+                f(3);
+            }, 13);
+        });
+        resolveF(v);
+        Promise.delay(f, 100).then(function(value) {
+            assert.equal(value, 3);
+            done();
+        });
     });
 });

@@ -1,8 +1,8 @@
 //This is pretty lame but what you gonna do
 
 //async.js
-CONSTANT(LATE_BUFFER_CAPACITY, 16);
-CONSTANT(FUNCTION_BUFFER_CAPACITY, 65536);
+CONSTANT(LATE_QUEUE_CAPACITY, 16);
+CONSTANT(NORMAL_QUEUE_CAPACITY, 65536);
 
 //errors.js
 CONSTANT(ERROR_HANDLED_KEY, "__promiseHandled__");
@@ -27,8 +27,8 @@ CONSTANT(CALLBACK_PROMISE_OFFSET, 3);
 CONSTANT(CALLBACK_RECEIVER_OFFSET, 4);
 CONSTANT(CALLBACK_SIZE, 5);
 //Layout for ._bitField
-//QQWF NCTR BPHS UDLL LLLL LLLL LLLL LLLL
-//Q = isGcQueued (Both bits are either on or off to represent
+//QQWF NCTR BMHS UDLL LLLL LLLL LLLL LLLL
+//Q = isSettlePromisesQueued (Both bits are either on or off to represent
 //                    1 bit due to 31-bit integers in 32-bit v8)
 //W = isFollowing (The promise that is being followed is not stored explicitly)
 //F = isFulfilled
@@ -36,8 +36,7 @@ CONSTANT(CALLBACK_SIZE, 5);
 //C = isCancellable
 //T = isFinal (used for .done() implementation)
 //B = isBound
-//P = isProxied (optimization when .then listeners on a promise are
-//                just respective fate sealers on some other promise)
+//M = isMigrated
 //H = isRejectionUnhandled
 //S = isCarryingStackTrace
 //U = isUnhanldedRejectionNotified
@@ -45,14 +44,14 @@ CONSTANT(CALLBACK_SIZE, 5);
 //R = [Reserved]
 //L = Length, 18 bit unsigned
 CONSTANT(NO_STATE, 0x0|0);
-CONSTANT(IS_GC_QUEUED, 0xC0000000|0)
+CONSTANT(IS_SETTLE_PROMISES_QUEUED, 0xC0000000|0)
 CONSTANT(IS_FOLLOWING, 0x20000000|0);
 CONSTANT(IS_FULFILLED, 0x10000000|0);
 CONSTANT(IS_REJECTED, 0x8000000|0);
 CONSTANT(IS_CANCELLABLE, 0x4000000|0);
 CONSTANT(IS_FINAL, 0x2000000|0);
 CONSTANT(IS_BOUND, 0x800000|0);
-CONSTANT(IS_PROXIED, 0x400000|0);
+CONSTANT(IS_MIGRATED, 0x400000|0);
 CONSTANT(IS_REJECTION_UNHANDLED, 0x200000|0);
 CONSTANT(IS_CARRYING_STACK_TRACE, 0x100000|0);
 CONSTANT(IS_UNHANDLED_REJECTION_NOTIFIED, 0x80000|0);
@@ -96,23 +95,48 @@ CONSTANT(RETURN, 2);
 CONSTANT(MAX_PARAM_COUNT, 1023);
 CONSTANT(PARAM_COUNTS_TO_TRY, 5);
 
+
+
 //deprecated
-CONSTANT(OBJECT_PROMISIFY_DEPRECATED, "Promise.promisify for promisifying entire objects is deprecated. Use Promise.promisifyAll instead.");
+CONSTANT(OBJECT_PROMISIFY_DEPRECATED, "Promise.promisify for promisifying entire objects is deprecated. Use Promise.promisifyAll instead.\n\n\
+    See http://goo.gl/RZ1TF0");
 CONSTANT(SPAWN_DEPRECATED, "Promise.spawn is deprecated. Use Promise.coroutine instead.");
 
 //errors
-CONSTANT(CONSTRUCT_ERROR_ARG, "the promise constructor requires a resolver function");
-CONSTANT(UNBOUND_RESOLVER_INVOCATION, "Illegal invocation, resolver resolve/reject must be called within a resolver context. Consider using the promise constructor instead.");
-CONSTANT(CONSTRUCT_ERROR_INVOCATION, "the promise constructor cannot be invoked directly");
-CONSTANT(COLLECTION_ERROR,  "expecting an array, a promise or a thenable" );
-CONSTANT(NOT_GENERATOR_ERROR, "generatorFunction must be a function");
-CONSTANT(NOT_FUNCTION_ERROR, "fn must be a function");
-CONSTANT(LONG_STACK_TRACES_ERROR, "cannot enable long stack traces after promises have been created");
-CONSTANT(INSPECTION_VALUE_ERROR, "cannot get fulfillment value of a non-fulfilled promise");
-CONSTANT(INSPECTION_REASON_ERROR, "cannot get rejection reason of a non-rejected promise");
-CONSTANT(PROMISIFY_TYPE_ERROR, "the target of promisifyAll must be an object or a function");
-CONSTANT(CIRCULAR_RESOLUTION_ERROR, "circular promise resolution chain");
-CONSTANT(PROPS_TYPE_ERROR, "cannot await properties of a non-object");
-CONSTANT(POSITIVE_INTEGER_ERROR, "expecting a positive integer");
-CONSTANT(TIMEOUT_ERROR, "operation timed out after");
-CONSTANT(YIELDED_NON_PROMISE_ERROR, "A value was yielded that could not be treated as a promise");
+CONSTANT(TIMEOUT_ERROR, "operation timed out");
+CONSTANT(CONSTRUCT_ERROR_ARG, "the promise constructor requires a resolver function\n\n\
+    See http://goo.gl/EC22Yn\n");
+CONSTANT(CONSTRUCT_ERROR_INVOCATION, "the promise constructor cannot be invoked directly\n\n\
+    See http://goo.gl/KsIlge\n");
+CONSTANT(COLLECTION_ERROR,  "expecting an array, a promise or a thenable\n\n\
+    See http://goo.gl/s8MMhc\n");
+CONSTANT(NOT_GENERATOR_ERROR, "generatorFunction must be a function\n\n\
+    See http://goo.gl/6Vqhm0\n");
+CONSTANT(NOT_FUNCTION_ERROR, "fn must be a function\n\n\
+    See http://goo.gl/916lJJ\n");
+CONSTANT(LONG_STACK_TRACES_ERROR, "cannot enable long stack traces after promises have been created\n\n\
+    See http://goo.gl/DT1qyG\n");
+CONSTANT(INSPECTION_VALUE_ERROR, "cannot get fulfillment value of a non-fulfilled promise\n\n\
+    See http://goo.gl/hc1DLj\n");
+CONSTANT(INSPECTION_REASON_ERROR, "cannot get rejection reason of a non-rejected promise\n\n\
+    See http://goo.gl/hPuiwB\n");
+CONSTANT(PROMISIFY_TYPE_ERROR, "the target of promisifyAll must be an object or a function\n\n\
+    See http://goo.gl/9ITlV0\n");
+CONSTANT(CIRCULAR_RESOLUTION_ERROR, "circular promise resolution chain\n\n\
+    See http://goo.gl/LhFpo0\n");
+CONSTANT(PROPS_TYPE_ERROR, "cannot await properties of a non-object\n\n\
+    See http://goo.gl/OsFKC8\n");
+CONSTANT(POSITIVE_INTEGER_ERROR, "expecting a positive integer\n\n\
+    See http://goo.gl/1wAmHx\n");
+CONSTANT(YIELDED_NON_PROMISE_ERROR, "A value was yielded that could not be treated as a promise\n\n\
+    See http://goo.gl/4Y4pDk\n");
+CONSTANT(NOT_ERROR_TYPE_OR_PREDICATE, "Catch filter must inherit from Error or be a simple predicate function\n\n\
+    See http://goo.gl/o84o68\n");
+CONSTANT(UNBOUND_RESOLVER_INVOCATION, "Illegal invocation, resolver resolve/reject must be called within a resolver context. Consider using the promise constructor instead.\n\n\
+    See http://goo.gl/sdkXL9\n");
+CONSTANT(PROMISIFICATION_NORMAL_METHODS_ERROR, "Cannot promisify an API that has normal methods with '%s'-suffix\n\n\
+    See http://goo.gl/iWrZbw\n");
+CONSTANT(SUFFIX_NOT_IDENTIFIER, "suffix must be a valid identifier\n\n\
+    See http://goo.gl/8FZo5V\n");
+CONSTANT(NO_ASYNC_SCHEDULER, "No async scheduler available\n\n\
+    See http://goo.gl/m3OTXk\n");

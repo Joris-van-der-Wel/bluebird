@@ -1,5 +1,5 @@
 "use strict";
-module.exports = function(Promise, NEXT_FILTER, cast) {
+module.exports = function(Promise, NEXT_FILTER, tryConvertToPromise) {
 var util = require("./util.js");
 var wrapsPrimitiveReceiver = util.wrapsPrimitiveReceiver;
 var isPrimitive = util.isPrimitive;
@@ -12,12 +12,12 @@ function throwThis() {
     throw this;
 }
 function return$(r) {
-    return function Promise$_returner() {
+    return function() {
         return r;
     };
 }
 function throw$(r) {
-    return function Promise$_thrower() {
+    return function() {
         throw r;
     };
 }
@@ -41,8 +41,9 @@ function finallyHandler(reasonOrValue) {
 
     //Nobody ever returns anything from a .finally handler so speed this up
     if (ret !== undefined) {
-        var maybePromise = cast(ret, undefined);
+        var maybePromise = tryConvertToPromise(ret, undefined);
         if (maybePromise instanceof Promise) {
+            maybePromise = maybePromise._target();
             return promisedFinally(maybePromise, reasonOrValue,
                                     promise.isFulfilled());
         }
@@ -68,8 +69,9 @@ function tapHandler(value) {
 
     //Nobody ever returns anything from a .finally handler so speed this up
     if (ret !== undefined) {
-        var maybePromise = cast(ret, undefined);
+        var maybePromise = tryConvertToPromise(ret, undefined);
         if (maybePromise instanceof Promise) {
+            maybePromise = maybePromise._target();
             return promisedFinally(maybePromise, value, true);
         }
     }

@@ -1,5 +1,8 @@
 "use strict";
-module.exports = function(Promise, apiRejection, INTERNAL, cast) {
+module.exports = function(Promise,
+                          apiRejection,
+                          INTERNAL,
+                          tryConvertToPromise) {
 var errors = require("./errors.js");
 var TypeError = errors.TypeError;
 var ASSERT = require("./assert.js");
@@ -9,7 +12,7 @@ var errorObj = util.errorObj;
 var tryCatch1 = util.tryCatch1;
 var yieldHandlers = [];
 
-function promiseFromYieldHandler(value, yieldHandlers) {
+function promiseFromYieldHandler(value, yieldHandlers, traceParent) {
     var _errorObj = errorObj;
     var _Promise = Promise;
     var len = yieldHandlers.length;
@@ -18,7 +21,7 @@ function promiseFromYieldHandler(value, yieldHandlers) {
         if (result === _errorObj) {
             return _Promise.reject(_errorObj.e);
         }
-        var maybePromise = cast(result, promiseFromYieldHandler);
+        var maybePromise = tryConvertToPromise(result, traceParent);
         if (maybePromise instanceof _Promise) return maybePromise;
     }
     return null;
@@ -50,7 +53,7 @@ PromiseSpawn.prototype._continue = function (result) {
     if (result === errorObj) {
         this._generator = undefined;
         var trace = errors.canAttachTrace(result.e)
-            ? result.e : new Error(result.e + "");
+            ? result.e : new Error(util.toString(result.e));
         this._promise._attachExtraTrace(trace);
         this._promise._reject(result.e, trace);
         return;
@@ -63,10 +66,12 @@ PromiseSpawn.prototype._continue = function (result) {
             this._promise._fulfill(value);
         }
     } else {
-        var maybePromise = cast(value, undefined);
+        var maybePromise = tryConvertToPromise(value, this._promise);
         if (!(maybePromise instanceof Promise)) {
             maybePromise =
-                promiseFromYieldHandler(maybePromise, this._yieldHandlers);
+                promiseFromYieldHandler(maybePromise,
+                                        this._yieldHandlers,
+                                        this._promise);
             ASSERT(maybePromise === null || maybePromise instanceof Promise);
             if (maybePromise === null) {
                 this._throw(new TypeError(YIELDED_NON_PROMISE_ERROR));

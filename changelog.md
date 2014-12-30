@@ -1,3 +1,48 @@
+## 2.5.2 (2014-12-29)
+
+Bugfixes:
+
+ - Fix bug where already resolved promise gets attached more handlers while calling its handlers resulting in some handlers not being called
+ - Fix bug where then handlers are not called in the same order as they would run if Promises/A+ 2.3.2 was implemented as adoption
+ - Fix bug where using `Object.create(null)` as a rejection reason would crash bluebird
+
+## 2.5.1 (2014-12-29)
+
+Bugfixes:
+
+ - Fix `.finally` throwing null error when it is derived from a promise that is resolved with a promise that is resolved with a promise
+
+## 2.5.0 (2014-12-28)
+
+Features:
+
+ - [`.get`](#API.md#https://github.com/petkaantonov/bluebird/blob/master/API.md#getstring-propertyname---promise) now supports negative indexing.
+
+Bugfixes:
+
+ - Fix bug with `Promise.method` wrapped function returning a promise that never resolves if the function returns a promise that is resolved with another promise
+ - Fix bug with `Promise.delay` never resolving if the value is a promise that is resolved with another promise
+
+## 2.4.3 (2014-12-28)
+
+Bugfixes:
+
+ - Fix memory leak as described in [this Promises/A+ spec issue](https://github.com/promises-aplus/promises-spec/issues/179).
+
+## 2.4.2 (2014-12-21)
+
+Bugfixes:
+
+ - Fix bug where spread rejected handler is ignored in case of rejection
+ - Fix synchronous scheduler passed to `setScheduler` causing infinite loop
+
+## 2.4.1 (2014-12-20)
+
+Features:
+
+ - Error messages now have links to wiki pages for additional information
+ - Promises now clean up all references (to handlers, child promises etc) as soon as possible.
+
 ## 2.4.0 (2014-12-18)
 
 Features:

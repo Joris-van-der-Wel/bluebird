@@ -1,5 +1,5 @@
 "use strict";
-module.exports = function(Promise, INTERNAL, cast) {
+module.exports = function(Promise, INTERNAL, tryConvertToPromise) {
 var ASSERT = require("./assert.js");
 var canAttachTrace = require("./errors.js").canAttachTrace;
 var util = require("./util.js");
@@ -38,34 +38,33 @@ PromiseArray.prototype.promise = function () {
     return this._promise;
 };
 
-PromiseArray.prototype._init =
-            //when.some resolves to [] when empty
-            //but when.any resolved to undefined when empty :<
-function PromiseArray$_init(_, resolveValueIfEmpty) {
-            //_ must be intentionally empty because smuggled
-            //data is always the second argument
-            //all of this is due to when vs some having different semantics on
-            //empty arrays
-    var values = cast(this._values, undefined);
+// _ must be intentionally empty because smuggled
+// data is always the second argument
+// all of this is due to when vs some having different semantics on
+// empty arrays
+PromiseArray.prototype._init = function init(_, resolveValueIfEmpty) {
+
+    var values = tryConvertToPromise(this._values, undefined);
     if (values instanceof Promise) {
-        this._values = values;
         values._setBoundTo(this._promise._boundTo);
+        values = values._target();
+        this._values = values;
         //Expect the promise to be a promise
         //for an array
-        if (values.isFulfilled()) {
+        if (values._isFulfilled()) {
             //Fulfilled promise with hopefully
             //an array as a resolution value
-            values = values._settledValue;
+            values = values._value();
             if (!isArray(values)) {
                 var err = new Promise.TypeError(COLLECTION_ERROR);
                 this.__hardReject__(err);
                 return;
             }
-        } else if (values.isPending()) {
+        } else if (values._isPending()) {
             ASSERT(typeof resolveValueIfEmpty === "number");
             ASSERT(resolveValueIfEmpty < 0);
             values._then(
-                PromiseArray$_init,
+                init,
                 this._reject,
                 undefined,
                 this,
@@ -74,7 +73,7 @@ function PromiseArray$_init(_, resolveValueIfEmpty) {
             return;
         } else {
             values._unsetRejectionIsUnhandled();
-            this._reject(values._settledValue);
+            this._reject(values._reason());
             return;
         }
     } else if (!isArray(values)) {
@@ -95,18 +94,20 @@ function PromiseArray$_init(_, resolveValueIfEmpty) {
     var len = this.getActualLength(values.length);
     this._length = len;
     this._values = this.shouldCopyValues() ? new Array(len) : this._values;
+    var promise = this._promise;
     for (var i = 0; i < len; ++i) {
         if (this._isResolved()) return;
-        var maybePromise = cast(values[i], undefined);
+        var maybePromise = tryConvertToPromise(values[i], promise);
         if (maybePromise instanceof Promise) {
-            if (maybePromise.isPending()) {
+            maybePromise = maybePromise._target();
+            if (maybePromise._isPending()) {
                 // Optimized for just passing the updates through
                 maybePromise._proxyPromiseArray(this, i);
-            } else if (maybePromise.isFulfilled()) {
-                this._promiseFulfilled(maybePromise._settledValue, i);
+            } else if (maybePromise._isFulfilled()) {
+                this._promiseFulfilled(maybePromise._value(), i);
             } else {
                 maybePromise._unsetRejectionIsUnhandled();
-                this._promiseRejected(maybePromise._settledValue, i);
+                this._promiseRejected(maybePromise._reason(), i);
             }
         } else {
             this._promiseFulfilled(maybePromise, i);
@@ -129,13 +130,14 @@ PromiseArray.prototype.__hardReject__ =
 PromiseArray.prototype._reject = function (reason) {
     ASSERT(!this._isResolved());
     this._values = null;
-    var trace = canAttachTrace(reason) ? reason : new Error(reason + "");
+    var trace = canAttachTrace(reason)
+        ? reason : new Error(util.toString(reason));
     this._promise._attachExtraTrace(trace);
     this._promise._reject(reason, trace);
 };
 
 PromiseArray.prototype._promiseProgressed = function (progressValue, index) {
-    if (this._isResolved()) return;
+    ASSERT(!this._isResolved());
     ASSERT(isArray(this._values));
     this._promise._progress({
         index: index,
@@ -145,7 +147,7 @@ PromiseArray.prototype._promiseProgressed = function (progressValue, index) {
 
 
 PromiseArray.prototype._promiseFulfilled = function (value, index) {
-    if (this._isResolved()) return;
+    ASSERT(!this._isResolved());
     ASSERT(isArray(this._values));
     ASSERT(typeof index === "number");
     this._values[index] = value;
@@ -157,7 +159,7 @@ PromiseArray.prototype._promiseFulfilled = function (value, index) {
 
 PromiseArray.prototype._promiseRejected = function (reason, index) {
     ASSERT(index >= 0);
-    if (this._isResolved()) return;
+    ASSERT(!this._isResolved());
     ASSERT(isArray(this._values));
     this._totalResolved++;
     this._reject(reason);

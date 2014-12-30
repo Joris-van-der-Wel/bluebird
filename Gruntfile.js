@@ -1,5 +1,6 @@
 "use strict";
 Error.stackTraceLimit = 100;
+var Table = require('cli-table');
 var astPasses = require("./ast_passes.js");
 var node11 = parseInt(process.versions.node.split(".")[1], 10) >= 11;
 var Q = require("q");
@@ -26,12 +27,10 @@ module.exports = function( grunt ) {
     function getBrowsers() {
         //Terse format to generate the verbose format required by sauce
         var browsers = {
-            "internet explorer|WIN8": ["10"],
-            "internet explorer|WIN8.1": ["11"],
-            "firefox|Windows 7": ["3.5", "4", "25"],
-            "chrome|Windows 7": null,
-            "safari|Windows 7": ["5"],
-            "iphone|OS X 10.8": ["6.0"]
+            "internet explorer|Windows XP": ["7", "8"],
+            "firefox|Windows 7": ["3.5", "4", "25", "33"],
+            "chrome|Windows 7": ["beta"],
+            "safari|Windows 7": ["5"]
         };
 
         var ret = [];
@@ -51,7 +50,7 @@ module.exports = function( grunt ) {
             }
             else {
                 ret.push({
-                    browserName: browser,
+                    browserNAme: browser,
                     platform: platform
                 });
             }
@@ -61,15 +60,15 @@ module.exports = function( grunt ) {
 
 
     var optionalModuleDependencyMap = {
-        "timers.js": ['Promise', 'INTERNAL', 'cast'],
-        "race.js": ['Promise', 'INTERNAL', 'cast'],
+        "timers.js": ['Promise', 'INTERNAL', 'tryConvertToPromise'],
+        "race.js": ['Promise', 'INTERNAL', 'tryConvertToPromise'],
         "call_get.js": ['Promise'],
-        "generators.js": ['Promise', 'apiRejection', 'INTERNAL', 'cast'],
-        "map.js": ['Promise', 'PromiseArray', 'apiRejection', 'cast', 'INTERNAL'],
+        "generators.js": ['Promise', 'apiRejection', 'INTERNAL', 'tryConvertToPromise'],
+        "map.js": ['Promise', 'PromiseArray', 'apiRejection', 'tryConvertToPromise', 'INTERNAL'],
         "nodeify.js": ['Promise'],
         "promisify.js": ['Promise', 'INTERNAL'],
-        "props.js": ['Promise', 'PromiseArray', 'cast'],
-        "reduce.js": ['Promise', 'PromiseArray', 'apiRejection', 'cast', 'INTERNAL'],
+        "props.js": ['Promise', 'PromiseArray', 'tryConvertToPromise'],
+        "reduce.js": ['Promise', 'PromiseArray', 'apiRejection', 'tryConvertToPromise', 'INTERNAL'],
         "settle.js": ['Promise', 'PromiseArray'],
         "some.js": ['Promise', 'PromiseArray', 'apiRejection'],
         "any.js": ['Promise', 'PromiseArray'],
@@ -77,7 +76,7 @@ module.exports = function( grunt ) {
         "cancel.js": ['Promise', 'INTERNAL'],
         "filter.js": ['Promise', 'INTERNAL'],
         "each.js": ['Promise', 'INTERNAL'],
-        "using.js": ['Promise', 'apiRejection', 'cast']
+        "using.js": ['Promise', 'apiRejection', 'tryConvertToPromise']
     };
 
     var optionalModuleRequireMap = {
@@ -326,9 +325,10 @@ module.exports = function( grunt ) {
         all: {
             options: {
                 urls: ["http://127.0.0.1:9999/index.html"],
-                tunnelTimeout: 5,
+                tunnelTimeout: 30,
                 build: process.env.TRAVIS_JOB_ID,
-                concurrency: 3,
+                maxPollRetries: 3,
+                throttled: 3,
                 browsers: getBrowsers(),
                 testname: "mocha tests",
                 tags: ["master"]
@@ -368,8 +368,11 @@ module.exports = function( grunt ) {
             grunt.option("verbose")
                 ? process.stdout
                 : 'ignore',
-            process.stderr
+            grunt.option("verbose")
+                ? process.stderr
+                : 'ignore'
         ];
+        if (!env && !isCI) env = {singleTest: !!grunt.option("single-test")};
         var flags = node11 ? ["--harmony-generators"] : [];
         flags.push("--allow-natives-syntax");
         if( file.indexOf( "mocha/") > -1 || file === "aplus.js" ) {
@@ -382,13 +385,18 @@ module.exports = function( grunt ) {
                              {cwd: p, stdio: stdio, env:env});
         }
         node.on('exit', exit );
+        node.on('error', function() {
+            exit(-1);
+        });
 
         function exit( code ) {
+            var callback = cb;
+            cb = function() {};
             if( code !== 0 ) {
-                cb(new Error("process didn't exit normally. Code: " + code));
+                callback(new Error("process didn't exit normally. Code: " + code));
             }
             else {
-                cb(null);
+                callback(null);
             }
         }
 
@@ -614,10 +622,43 @@ module.exports = function( grunt ) {
         return this.indexOf( str ) >= 0;
     };
 
-    function isSlowTest( file ) {
-        return file.contains("2.3.3") ||
-            file.contains("bind") ||
-            file.contains("unhandled_rejections");
+    var ROWS = 35;
+    var prevLog = new Array(ROWS);
+    var log = new Array(ROWS);
+    for (var i = 0; i < ROWS; ++i) log[i] = [];
+    var tableOpts = {
+        chars: {
+            'mid': '',
+            'left-mid': '',
+            'mid-mid': '',
+            'right-mid': ''
+        },
+        style: {
+            'padding-left': 0,
+            'padding-right': 0,
+            compact: true
+        }
+    };
+
+    function dumpLog() {
+        var table = new Table(tableOpts);
+        table.push.apply(table, log);
+        process.stdout.cursorTo(0, 0);
+        table = table.toString();
+        process.stdout.write(table);
+        var lines = table.split("\n").length + 1;
+        process.stdout.cursorTo(0, lines);
+    }
+
+    function logFileStatus(file, message, doOutput) {
+        if (grunt.option("single-test")) return;
+        var index = file.index;
+        var row = index % ROWS;
+        var column = (index / ROWS) | 0;
+        log[row][column] = message;
+        if (doOutput !== false) {
+            dumpLog();
+        }
     }
 
     function testRun( testOption, jobs ) {
@@ -627,10 +668,16 @@ module.exports = function( grunt ) {
 
         var totalTests = 0;
         var testsDone = 0;
-        function testDone() {
+        var failures = 0;
+        function testDone(err) {
+            if (err) failures++;
             testsDone++;
             if( testsDone >= totalTests ) {
-                done();
+                if (failures > 0) {
+                    done(new Error("Some tests failed"));
+                } else {
+                    done();
+                }
             }
         }
         var files;
@@ -664,26 +711,29 @@ module.exports = function( grunt ) {
             return /\.js$/.test(fileName);
         }).map(function(f){
             return f.replace( /(\d)(\d)(\d)/, "$1.$2.$3" );
-        });
-
-
-        var slowTests = files.filter(isSlowTest);
-        files = files.filter(function(file){
-            return !isSlowTest(file);
+        }).map(function(f, i) {
+            return {
+                name: path.basename(f),
+                path: f,
+                index: i
+            };
         });
 
         function runFile(file) {
             totalTests++;
-            grunt.log.writeln("Running test " + file );
             var env = undefined;
-            if (file.indexOf("bluebird-debug-env-flag") >= 0) {
+            if (file.path.indexOf("bluebird-debug-env-flag") >= 0) {
                 env = Object.create(process.env);
                 env["BLUEBIRD_DEBUG"] = true;
             }
-            runIndependentTest(file, function(err) {
-                if( err ) throw new Error(err + " " + file + " failed");
-                grunt.log.writeln("Test " + file + " succeeded");
-                testDone();
+            runIndependentTest(file.path, function(err) {
+                if(err) {
+                    logFileStatus(file, file.name + " \u001b[31m\u00D7 FAILURE\u001b[39m");
+                    testDone(true);
+                } else {
+                    logFileStatus(file, file.name + " \u001b[32m\u221A\u001b[39m");
+                    testDone(false);
+                }
                 if( files.length > 0 ) {
                     runFile( files.shift() );
                 }
@@ -691,15 +741,22 @@ module.exports = function( grunt ) {
         }
 
         jobs = Math.min( files.length, jobs );
-        if (jobs === 1 || (jobs === 0 && slowTests.length === 1)) {
+
+        if (jobs === 1) {
             grunt.option("verbose", true);
+            grunt.option("single-test", true);
+        } else {
+            process.stdout.cursorTo(0, 0);
+            process.stdout.clearScreenDown();
+            files.forEach(function(file) {
+                logFileStatus(file, file.name + "  ", false);
+            });
+
+            dumpLog();
         }
 
-        slowTests.forEach(runFile);
-
-
         for( var i = 0; i < jobs; ++i ) {
-            runFile( files.shift() );
+            runFile(files.shift());
         }
     }
 

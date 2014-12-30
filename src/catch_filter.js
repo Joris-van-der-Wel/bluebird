@@ -13,7 +13,7 @@ function CatchFilter(instances, callback, promise) {
     this._promise = promise;
 }
 
-function CatchFilter$_safePredicate(predicate, e) {
+function safePredicate(predicate, e) {
     var safeObject = {};
     var retfilter = tryCatch1(predicate, safeObject, e);
 
@@ -21,9 +21,7 @@ function CatchFilter$_safePredicate(predicate, e) {
 
     var safeKeys = keys(safeObject);
     if (safeKeys.length) {
-        errorObj.e = new TypeError(
-            "Catch filter must inherit from Error "
-          + "or be a simple predicate function");
+        errorObj.e = new TypeError(NOT_ERROR_TYPE_OR_PREDICATE);
         return errorObj;
     }
     return retfilter;
@@ -46,11 +44,11 @@ CatchFilter.prototype.doFilter = function (e) {
             }
             return ret;
         } else if (typeof item === "function" && !itemIsErrorType) {
-            var shouldHandle = CatchFilter$_safePredicate(item, e);
+            var shouldHandle = safePredicate(item, e);
             if (shouldHandle === errorObj) {
                 var trace = errors.canAttachTrace(errorObj.e)
                     ? errorObj.e
-                    : new Error(errorObj.e + "");
+                    : new Error(util.toString(errorObj.e));
                 this._promise._attachExtraTrace(trace);
                 e = errorObj.e;
                 break;

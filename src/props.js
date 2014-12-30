@@ -1,5 +1,5 @@
 "use strict";
-module.exports = function(Promise, PromiseArray, cast) {
+module.exports = function(Promise, PromiseArray, tryConvertToPromise) {
 var ASSERT = require("./assert.js");
 var util = require("./util.js");
 var apiRejection = require("./errors_api_rejection")(Promise);
@@ -26,7 +26,7 @@ PropertiesPromiseArray.prototype._init = function () {
 
 //Override
 PropertiesPromiseArray.prototype._promiseFulfilled = function (value, index) {
-    if (this._isResolved()) return;
+    ASSERT(!this._isResolved());
     ASSERT(!(value instanceof Promise));
     this._values[index] = value;
     var totalResolved = ++this._totalResolved;
@@ -42,7 +42,7 @@ PropertiesPromiseArray.prototype._promiseFulfilled = function (value, index) {
 
 //Override
 PropertiesPromiseArray.prototype._promiseProgressed = function (value, index) {
-    if (this._isResolved()) return;
+    ASSERT(!this._isResolved());
 
     this._promise._progress({
         key: this._values[index + this.length()],
@@ -60,9 +60,9 @@ PropertiesPromiseArray.prototype.getActualLength = function (len) {
     return len >> 1;
 };
 
-function Promise$_Props(promises) {
+function props(promises) {
     var ret;
-    var castValue = cast(promises, undefined);
+    var castValue = tryConvertToPromise(promises, undefined);
 
     if (!isObject(castValue)) {
         return apiRejection(PROPS_TYPE_ERROR);
@@ -80,10 +80,10 @@ function Promise$_Props(promises) {
 }
 
 Promise.prototype.props = function () {
-    return Promise$_Props(this);
+    return props(this);
 };
 
 Promise.props = function (promises) {
-    return Promise$_Props(promises);
+    return props(promises);
 };
 };

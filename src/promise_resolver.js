@@ -25,7 +25,7 @@ function wrapAsOperationalError(obj) {
 }
 
 function nodebackForPromise(promise) {
-    function PromiseResolver$_callback(err, value) {
+    return function(err, value) {
         if (promise === null) return;
 
         if (err) {
@@ -40,8 +40,7 @@ function nodebackForPromise(promise) {
         }
 
         promise = null;
-    }
-    return PromiseResolver$_callback;
+    };
 }
 
 
@@ -120,7 +119,8 @@ PromiseResolver.prototype.reject = function (reason) {
 
     var promise = this.promise;
     errors.markAsOriginatingFromRejection(reason);
-    var trace = errors.canAttachTrace(reason) ? reason : new Error(reason + "");
+    var trace = errors.canAttachTrace(reason)
+        ? reason : new Error(util.toString(reason));
     promise._attachExtraTrace(trace);
     async.invoke(promise._reject, promise, reason);
     if (trace !== reason) {

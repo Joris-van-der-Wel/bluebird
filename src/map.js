@@ -1,5 +1,10 @@
 "use strict";
-module.exports = function(Promise, PromiseArray, apiRejection, cast, INTERNAL) {
+module.exports = function(Promise,
+                          PromiseArray,
+                          apiRejection,
+                          tryConvertToPromise,
+                          INTERNAL) {
+var ASSERT = require("./assert.js");
 var util = require("./util.js");
 var tryCatch3 = util.tryCatch3;
 var errorObj = util.errorObj;
@@ -31,9 +36,8 @@ MappingPromiseArray.prototype._init = function () {};
 
 // Override
 MappingPromiseArray.prototype._promiseFulfilled = function (value, index) {
+    ASSERT(!this._isResolved());
     var values = this._values;
-    if (values === null) return;
-
     var length = this.length();
     var preservedValues = this._preservedValues;
     var limit = this._limit;
@@ -61,17 +65,18 @@ MappingPromiseArray.prototype._promiseFulfilled = function (value, index) {
         // The MappingPromiseArray as a PromiseArray for round 2.
         // To mark an index as "round 2" (where the callback must not be called
         // anymore), the marker PENDING is put at that index
-        var maybePromise = cast(ret, undefined);
+        var maybePromise = tryConvertToPromise(ret, this._promise);
         if (maybePromise instanceof Promise) {
-            if (maybePromise.isPending()) {
+            maybePromise = maybePromise._target();
+            if (maybePromise._isPending()) {
                 if (limit >= 1) this._inFlight++;
                 values[index] = PENDING;
                 return maybePromise._proxyPromiseArray(this, index);
-            } else if (maybePromise.isFulfilled()) {
-                ret = maybePromise._settledValue;
+            } else if (maybePromise._isFulfilled()) {
+                ret = maybePromise._value();
             } else {
                 maybePromise._unsetRejectionIsUnhandled();
-                return this._reject(maybePromise._settledValue);
+                return this._reject(maybePromise._reason());
             }
         }
         values[index] = ret;
@@ -92,6 +97,7 @@ MappingPromiseArray.prototype._drainQueue = function () {
     var limit = this._limit;
     var values = this._values;
     while (queue.length > 0 && this._inFlight < limit) {
+        if (this._isResolved()) return;
         var index = queue.pop();
         this._promiseFulfilled(values[index], index);
     }

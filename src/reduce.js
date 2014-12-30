@@ -1,5 +1,10 @@
 "use strict";
-module.exports = function(Promise, PromiseArray, apiRejection, cast, INTERNAL) {
+module.exports = function(Promise,
+                          PromiseArray,
+                          apiRejection,
+                          tryConvertToPromise,
+                          INTERNAL) {
+var ASSERT = require("./assert.js");
 var util = require("./util.js");
 var tryCatch4 = util.tryCatch4;
 var tryCatch3 = util.tryCatch3;
@@ -17,18 +22,19 @@ function ReductionPromiseArray(promises, fn, accum, _each) {
     // Array is established once we have a known length
     this._valuesPhase = undefined;
 
-    var maybePromise = cast(accum, undefined);
+    var maybePromise = tryConvertToPromise(accum, undefined);
     var rejected = false;
     var isPromise = maybePromise instanceof Promise;
     if (isPromise) {
-        if (maybePromise.isPending()) {
+        maybePromise = maybePromise._target();
+        if (maybePromise._isPending()) {
             maybePromise._proxyPromiseArray(this, -1);
-        } else if (maybePromise.isFulfilled()) {
-            accum = maybePromise._settledValue;
+        } else if (maybePromise._isFulfilled()) {
+            accum = maybePromise._value();
             this._gotAccum = true;
         } else {
             maybePromise._unsetRejectionIsUnhandled();
-            this._reject(maybePromise.reason());
+            this._reject(maybePromise._reason());
             rejected = true;
         }
     }
@@ -55,8 +61,8 @@ ReductionPromiseArray.prototype._resolveEmptyArray = function () {
 
 // Override
 ReductionPromiseArray.prototype._promiseFulfilled = function (value, index) {
+    ASSERT(!this._isResolved());
     var values = this._values;
-    if (values === null) return;
     values[index] = value;
     var length = this.length();
     var preservedValues = this._preservedValues;
@@ -114,14 +120,15 @@ ReductionPromiseArray.prototype._promiseFulfilled = function (value, index) {
         if (valuesPhaseIndex !== REDUCE_PHASE_INITIAL) return;
         value = values[i];
         if (value instanceof Promise) {
-            if (value.isFulfilled()) {
-                value = value._settledValue;
-            } else if (value.isPending()) {
+            value = value._target();
+            if (value._isFulfilled()) {
+                value = value._value();
+            } else if (value._isPending()) {
                 // Continue later when the promise at current index fulfills
                 return;
             } else {
                 value._unsetRejectionIsUnhandled();
-                return this._reject(value.reason());
+                return this._reject(value._reason());
             }
         }
 
@@ -135,18 +142,19 @@ ReductionPromiseArray.prototype._promiseFulfilled = function (value, index) {
 
         if (ret === errorObj) return this._reject(ret.e);
 
-        var maybePromise = cast(ret, undefined);
+        var maybePromise = tryConvertToPromise(ret, this._promise);
         if (maybePromise instanceof Promise) {
+            maybePromise = maybePromise._target();
             // Callback returned a pending
             // promise so continue iteration when it fulfills
-            if (maybePromise.isPending()) {
+            if (maybePromise._isPending()) {
                 valuesPhase[i] = REDUCE_PHASE_REDUCING;
                 return maybePromise._proxyPromiseArray(this, i);
-            } else if (maybePromise.isFulfilled()) {
-                ret = maybePromise._settledValue;
+            } else if (maybePromise._isFulfilled()) {
+                ret = maybePromise._value();
             } else {
                 maybePromise._unsetRejectionIsUnhandled();
-                return this._reject(maybePromise._settledValue);
+                return this._reject(maybePromise._reason());
             }
         }
 
